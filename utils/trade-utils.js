@@ -1,0 +1,308 @@
+/**
+ * Common utilities for trade data processing and chart visualization
+ */
+
+/**
+ * Safely parses various date formats into epoch seconds, specifically handling
+ * the strict browser-specific parsing of IST strings like "10-FEB-2026 09:18".
+ */
+export function parseSafeTimestamp(ds) {
+    if (!ds) return 0;
+    if (typeof ds === 'number') return Math.floor(ds);
+
+    // Check if it's already an ISO string
+    if (ds.includes('T')) {
+        // If it includes + or - or ends with Z, it has an offset.
+        // Otherwise, it's a naive local ISO string; we assume IST.
+        const hasOffset = ds.includes('+') || (ds.lastIndexOf('-') > 10) || ds.endsWith('Z');
+        const normalized = hasOffset ? ds : ds + '+05:30';
+        const ms = new Date(normalized).getTime();
+        return isNaN(ms) ? 0 : Math.floor(ms / 1000);
+    }
+
+    // Format: "10-FEB-2026 09:18" (Implicitly IST / Asia/Kolkata)
+    const months = { JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06', JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12' };
+    const parts = ds.split(' ');
+    if (parts.length === 2 || parts.length === 3) {
+        const dateParts = parts[0].split('-');
+        if (dateParts.length === 3) {
+            const timePart = parts[1].length === 5 ? parts[1] + ':00' : parts[1];
+            // Format to ISO with IST offset to guarantee consistent browser parsing
+            const str = `${dateParts[2]}-${months[dateParts[1].toUpperCase()]}-${dateParts[0].padStart(2, '0')}T${timePart}+05:30`;
+            const ms = new Date(str).getTime();
+            if (!isNaN(ms)) return Math.floor(ms / 1000);
+        }
+    }
+
+    // Fallback
+    const d = new Date(ds.endsWith('Z') ? ds : ds + 'Z');
+    return isNaN(d) ? 0 : Math.floor(d.getTime() / 1000);
+}
+
+/**
+ * Converts trade entry, exit, targets and break-even points into chart markers.
+ * @param {Object} currentTrade - The selected instrument/trade data from store
+ * @returns {Array} List of markers for klinecharts
+ */
+export function generateMarkersFromTrade(currentTrade) {
+    if (!currentTrade) return [];
+    const list = [];
+    const cycles = currentTrade.tradeCycles;
+
+    // Grouping by cycle to avoid duplicate ENTRY markers if we are processing fragments
+    const processedCycles = new Set();
+
+    cycles?.forEach((trade, index) => {
+        const cycleId = trade.cycleId;
+
+        // 1. Entry
+        if (trade.entry?.time && !processedCycles.has(cycleId)) {
+            const entryTime = parseSafeTimestamp(trade.entry.time);
+            let optionPrice = trade.entry.price || 0;
+            let niftyPrice = trade.entry.niftyPrice || 0;
+
+            if (!niftyPrice && trade.entry.transaction) {
+                const niftyMatch = trade.entry.transaction.match(/NIFTY:\s*([\d.]+)/);
+                if (niftyMatch) niftyPrice = parseFloat(niftyMatch[1]);
+            }
+            if (!optionPrice && trade.entry.totalPrice) optionPrice = trade.entry.totalPrice / 65;
+
+            list.push({
+                id: `entry-${cycleId}-${entryTime}`,
+                time: entryTime,
+                niftyPrice: niftyPrice,
+                optionPrice: optionPrice,
+                pnl: 0,
+                label: 'ENTRY',
+                type: 'ENTRY',
+                cycleId: cycleId
+            });
+            processedCycles.add(cycleId);
+        }
+
+        // 2. Targets (Array-based new structure)
+        const targetList = Array.isArray(trade.targets) ? trade.targets : [];
+        targetList.forEach((t, tIdx) => {
+            if (t && t.time) {
+                const tTime = parseSafeTimestamp(t.time);
+                let tOptionPrice = t.price || 0;
+                let tNiftyPrice = t.niftyPrice || 0;
+                if (!tNiftyPrice && t.transaction) {
+                    const niftyMatch = t.transaction.match(/NIFTY:\s*([\d.]+)/);
+                    if (niftyMatch) tNiftyPrice = parseFloat(niftyMatch[1]);
+                }
+                if (!tOptionPrice && t.totalPrice) tOptionPrice = t.totalPrice / 65;
+
+                list.push({
+                    id: `target-${tIdx}-${cycleId}-${tTime}`,
+                    time: tTime,
+                    niftyPrice: tNiftyPrice,
+                    optionPrice: tOptionPrice,
+                    pnl: t.pnl || 0,
+                    label: 'TARGET',
+                    type: 'TARGET',
+                    cycleId: cycleId
+                });
+            }
+        });
+
+        // 3. Exit
+        if (trade.exit?.time) {
+            const exitTime = parseSafeTimestamp(trade.exit.time);
+            let optionPrice = trade.exit.price || 0;
+            let niftyPrice = trade.exit.niftyPrice || 0;
+            if (!niftyPrice && trade.exit.transaction) {
+                const niftyMatch = trade.exit.transaction.match(/NIFTY:\s*([\d.]+)/);
+                if (niftyMatch) niftyPrice = parseFloat(niftyMatch[1]);
+            }
+            if (!optionPrice && trade.exit.totalPrice) optionPrice = trade.exit.totalPrice / 65;
+
+            const reasonMap = {
+                'STOPLOSS': 'SL',
+                'STOP_LOSS': 'SL',
+                'TRAILING_SL': 'TSL',
+                'TSL_PCT': 'TSL',
+                'TSL_ID': 'TSL',
+                'BREAK_EVEN': 'BE',
+                'EOD': 'EOD',
+                'STRATEGY': 'SIG',
+                'SIGNAL_EXIT': 'SIG',
+                'SIGNAL_FLIP': 'SIG'
+            };
+            const shortReason = reasonMap[trade.exit.signal] || trade.exit.signal;
+
+            list.push({
+                id: `exit-${cycleId}-${exitTime}`,
+                time: exitTime,
+                niftyPrice: niftyPrice,
+                optionPrice: optionPrice,
+                pnl: trade.cyclePnL || 0,
+                label: trade.exit.signal?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
+                type: trade.exit.signal?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
+                exitReason: shortReason,
+                cycleId: cycleId
+            });
+        }
+    });
+
+    // Special Requirement: Only the LAST marker of each trade cycle should have the exitReason suffix
+    const lastMarkerMap = {}; // cycleId -> last marker index
+    list.forEach((m, idx) => {
+        if (!m.cycleId) return;
+        if (m.type === 'ENTRY' || m.type === 'BE') return; // Suffix only for EXIT/TARGET
+
+        const prevIdx = lastMarkerMap[m.cycleId];
+        if (prevIdx === undefined || m.time > list[prevIdx].time) {
+            lastMarkerMap[m.cycleId] = idx;
+        }
+    });
+
+    // Clear suffixes from all but the last marker
+    list.forEach((m, idx) => {
+        if (m.type === 'ENTRY' || m.type === 'BE') return;
+        if (lastMarkerMap[m.cycleId] !== idx) {
+            m.exitReason = '';
+        }
+    });
+
+    // Final Pass: "Nudge" logic for visual separation of overlapping markers
+    // Group by time and instrument to apply "Nudge" logic for visual separation
+    const timeGroups = {};
+    list.forEach(m => {
+        const k = `${m.time}`;
+        if (!timeGroups[k]) timeGroups[k] = [];
+        timeGroups[k].push(m);
+    });
+
+    Object.values(timeGroups).forEach(group => {
+        if (group.length > 1) {
+            // Sort by type (ENTRY first, then TARGET, then EXIT)
+            const typeOrder = { 'ENTRY': 0, 'BE': 1, 'TARGET': 2, 'EXIT': 3 };
+            group.sort((a, b) => (typeOrder[a.type] || 99) - (typeOrder[b.type] || 99));
+
+            // Nudge each subsequent marker by 5 seconds visually so they are side-by-side
+            group.forEach((m, i) => {
+                m.time = m.time + (i * 5);
+            });
+        }
+    });
+
+    return list;
+}
+
+/**
+ * Parses a trade cycle to generate horizontal price levels (Entry, SL, BE).
+ * @param {Object} currentTrade - The selected instrument/trade data
+ * @returns {Array} List of price levels { price, label, color }
+ */
+export function parseTradeCycle(currentTrade) {
+    if (!currentTrade) return [];
+
+    const list = [];
+    const cycles = currentTrade.tradeCycles;
+
+    cycles?.forEach(trade => {
+        if (trade.entry) {
+            let entryPrice = trade.entry.price || 0;
+            if (!entryPrice && trade.entry.transaction) {
+                const priceMatch = trade.entry.transaction.match(/at\s+([\d.]+)/);
+                if (priceMatch) entryPrice = parseFloat(priceMatch[1]);
+            }
+            if (!entryPrice && trade.entry.totalPrice) entryPrice = trade.entry.totalPrice / 65;
+            if (entryPrice) {
+                list.push({ price: entryPrice, label: 'Entry Price', color: '#3b82f6' });
+            }
+        }
+    });
+
+    return list;
+}
+
+/**
+ * Formats candle timeframe seconds into a readable string (e.g., "1m", "30s").
+ * @param {number} sec - Timeframe in seconds
+ * @returns {string}
+ */
+export function formatTimeframe(sec) {
+    if (!sec) return '1m';
+    return sec < 60 ? `${sec}s` : `${sec / 60}m`;
+}
+
+/**
+ * Calculates the maximum timestamp for chart data based on the last exit time plus some buffer.
+ * @param {Object} currentTrade - The selected instrument/trade data
+ * @returns {number|null} Max timestamp in seconds
+ */
+export function GetMaxTimestampOfTrade(currentTrade) {
+    if (!currentTrade) return null;
+
+    const cycles = currentTrade.tradeCycles;
+    if (!cycles?.length) return null;
+
+    let lastExit = 0;
+    cycles.forEach(trade => {
+        let tradeExitTime = trade.exit?.time;
+
+        const exitTime = parseSafeTimestamp(tradeExitTime);
+        if (exitTime && exitTime > lastExit) {
+            lastExit = exitTime;
+        }
+    });
+
+    if (lastExit === 0) {
+        // Fallback to backtest range if provided
+        if (currentTrade.backtestRange?.end) {
+            return parseSafeTimestamp(currentTrade.backtestRange.end) + 3600;
+        }
+        return null;
+    }
+
+    // Add 1 hour buffer (3600 seconds)
+    return lastExit + 3600;
+}
+
+/**
+ * Extracts indicator definitions from backtest configuration.
+ * @param {Object} config - Backtest config object
+ * @returns {Array} List of indicator definitions
+ */
+export function getIndicatorsFromConfig(config) {
+    if (!config) {
+        return [{ name: 'EMA', calcParams: [5, 21] }]; // Default fallback
+    }
+
+    // New path: structured overlays (dynamic_strategy and future strategies)
+    if (config.indicatorOverlays?.length) {
+        return config.indicatorOverlays;
+    }
+
+    // Legacy path: flat strategyParams (crossover_and_rsi, crossover_and_strend)
+    if (!config.strategyParams) {
+        return [{ name: 'EMA', calcParams: [5, 21] }];
+    }
+
+    const params = config.strategyParams;
+    const indicators = [];
+
+    // Combine fast and slow into one MA/EMA indicator if they are the same type
+    if (params.fastType === params.slowType && params.fastPeriod && params.slowPeriod) {
+        indicators.push({
+            name: params.fastType.toUpperCase(),
+            calcParams: [params.fastPeriod, params.slowPeriod]
+        });
+    } else {
+        if (params.fastType && params.fastPeriod) {
+            indicators.push({ name: params.fastType.toUpperCase(), calcParams: [params.fastPeriod] });
+        }
+        if (params.slowType && params.slowPeriod) {
+            indicators.push({ name: params.slowType.toUpperCase(), calcParams: [params.slowPeriod] });
+        }
+    }
+
+    // Add RSI if present in config
+    if (params.rsiPeriod) {
+        indicators.push({ name: 'RSI', calcParams: [params.rsiPeriod] });
+    }
+
+    return indicators;
+}
