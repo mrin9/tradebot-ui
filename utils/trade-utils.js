@@ -191,7 +191,7 @@ export function generateMarkersFromTrade(currentTrade) {
 }
 
 /**
- * Parses a trade cycle to generate horizontal price levels (Entry, SL, BE).
+ * Parses a trade cycle to generate horizontal price levels (Entry, Targets, Exit).
  * @param {Object} currentTrade - The selected instrument/trade data
  * @returns {Array} List of price levels { price, label, color }
  */
@@ -202,6 +202,7 @@ export function parseTradeCycle(currentTrade) {
     const cycles = currentTrade.tradeCycles;
 
     cycles?.forEach(trade => {
+        // 1. Entry
         if (trade.entry) {
             let entryPrice = trade.entry.price || 0;
             if (!entryPrice && trade.entry.transaction) {
@@ -210,13 +211,32 @@ export function parseTradeCycle(currentTrade) {
             }
             if (!entryPrice && trade.entry.totalPrice) entryPrice = trade.entry.totalPrice / 65;
             if (entryPrice) {
-                list.push({ price: entryPrice, label: 'Entry Price', color: '#3b82f6' });
+                list.push({ price: entryPrice, label: 'Entry', color: '#3b82f6' });
             }
+        }
+
+        // 2. Targets
+        const targetList = Array.isArray(trade.targets) ? trade.targets : [];
+        targetList.forEach(t => {
+            if (t && t.price) {
+                list.push({ price: t.price, label: `T${t.step || ''}`, color: '#10b981' });
+            }
+        });
+
+        // 3. Exit
+        if (trade.exit && trade.exit.price) {
+            const isProfit = (trade.cyclePnL || 0) >= 0;
+            list.push({ 
+                price: trade.exit.price, 
+                label: 'Exit', 
+                color: isProfit ? '#10b981' : '#ef4444' 
+            });
         }
     });
 
     return list;
 }
+
 
 /**
  * Formats candle timeframe seconds into a readable string (e.g., "1m", "30s").

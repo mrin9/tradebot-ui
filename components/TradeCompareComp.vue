@@ -42,7 +42,7 @@ const indicators = computed(() => {
 });
 
 const candleTimeframe = computed(() => {
-  const sec = backtestStore.selectedBacktest?.config?.timeframe || 60;
+  const sec = backtestStore.selectedBacktest?.config?.timeframeSeconds || 60;
   return formatTimeframe(sec);
 });
 

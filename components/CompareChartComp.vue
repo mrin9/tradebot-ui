@@ -41,6 +41,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { init, dispose } from 'klinecharts';
 import Button from 'primevue/button';
+import { getChartMarkerBg, getChartMarkerFg } from '../utils/color-utils';
 
 const props = defineProps({
   primaryId: [Number, String],
@@ -101,7 +102,7 @@ const toggleIndicators = () => {
 const fetchChartData = async (id, timeframe, endTime = null) => {
   if (!id) return { ticks: [], hasMoreOld: false, hasMoreNew: false };
   try {
-    let url = `/api/ticks?id=${id}&candle-interval=${timeframe}&limit=1000`;
+    let url = `/api/ticks?id=${id}&candle-interval=${timeframe}&limit=1200`;
     if (endTime) {
       const isoStr = new Date(endTime * 1000).toISOString();
       url += `&end-dt=${isoStr}`;
@@ -110,7 +111,7 @@ const fetchChartData = async (id, timeframe, endTime = null) => {
     const result = await res.json();
 
     const rawTicks = result.ticks;
-    const hasMoreOld = result.hasMoreOld ?? (rawTicks.length >= 1000);
+    const hasMoreOld = result.hasMoreOld ?? (rawTicks.length >= 1200);
     const hasMoreNew = result.hasMoreNew ?? false;
 
     return {
@@ -131,15 +132,7 @@ const fetchChartData = async (id, timeframe, endTime = null) => {
   }
 };
 
-const getMarkerColor = (type) => {
-  const root = getComputedStyle(document.documentElement);
-  switch (type) {
-    case 'ENTRY': return root.getPropertyValue('--color-entry');
-    case 'EXIT': return root.getPropertyValue('--color-exit');
-    case 'TARGET': return root.getPropertyValue('--color-target');
-    default: return root.getPropertyValue('--p-purple-500');
-  }
-};
+// getChartMarkerBg is now imported from utils/color-utils.js
 
 const applyIndicators = () => {
   if (!primaryChart.value || !secondaryChart.value) return;
@@ -181,22 +174,20 @@ const applyAnnotations = () => {
 
   const validMarkers = props.markers.filter(m => m.time > 0);
   validMarkers.forEach((m) => {
-    const markerColor = getMarkerColor(m.type);
+    const markerBg = getChartMarkerBg(m.type);
+    const markerFg = getChartMarkerFg(markerBg);
 
-    // Nifty Chart (Primary) -> Instrument Price (OptionPrice)
-    let niftyLabel = `${m.optionPrice?.toFixed(1) || '0.0'}`;
+    // Nifty Chart (Primary) -> Nifty Price
+    let niftyLabel = `${m.niftyPrice?.toFixed(1) || '0.0'}`;
 
-    // Instrument Chart (Secondary) -> PnL (or Instrument Price for Entry)
-    let optionLabel = '';
-    if (m.type === 'ENTRY') {
-      optionLabel = `${m.optionPrice?.toFixed(1) || '0.0'}`;
-    } else {
-      optionLabel = `${m.pnl?.toFixed(1) || '0.0'}`;
-    }
+    // Instrument Chart (Secondary) -> Option Price
+    let optionLabel = `${m.optionPrice?.toFixed(1) || '0.0'}`;
 
-    if (m.type === 'EXIT' && m.exitReason) {
-      niftyLabel += ` ${m.exitReason}`;
-      optionLabel += ` ${m.exitReason}`;
+    if (m.exitReason) {
+      if (m.type === 'EXIT' || m.type === 'TARGET') {
+        niftyLabel += ` ${m.exitReason}`;
+        optionLabel += ` ${m.exitReason}`;
+      }
     }
 
     // Apply to Nifty Chart (Only if niftyPrice is valid)
@@ -207,9 +198,9 @@ const applyAnnotations = () => {
         extendData: niftyLabel,
         points: [{ timestamp: (m.time * 1000), value: m.niftyPrice }],
         styles: {
-          text: { color: getComputedStyle(document.documentElement).getPropertyValue('--p-surface-0').trim() || '#ffffff', backgroundColor: markerColor, size: 11 },
-          polygon: { color: markerColor, fill: true },
-          line: { color: markerColor, style: 'solid' }
+          text: { color: markerFg, backgroundColor: markerBg, size: 11 },
+          polygon: { color: markerBg, fill: true },
+          line: { color: markerBg, style: 'solid' }
         }
       });
     }
@@ -221,9 +212,9 @@ const applyAnnotations = () => {
       extendData: optionLabel,
       points: [{ timestamp: (m.time * 1000), value: m.optionPrice }],
       styles: {
-        text: { color: '#ffffff', backgroundColor: markerColor, size: 11 },
-        polygon: { color: markerColor, fill: true },
-        line: { color: markerColor, style: 'solid' }
+        text: { color: markerFg, backgroundColor: markerBg, size: 11 },
+        polygon: { color: markerBg, fill: true },
+        line: { color: markerBg, style: 'solid' }
       }
     });
   });
@@ -234,6 +225,43 @@ const removeAnnotations = () => {
   primaryChart.value.removeOverlay({ name: 'simpleAnnotation' });
   secondaryChart.value.removeOverlay({ name: 'simpleAnnotation' });
   isAnnotationsVisible.value = false;
+};
+
+const applyLevels = () => {
+  if (!secondaryChart.value) return;
+
+  // Clear previous levels
+  secondaryChart.value.removeOverlay({ name: 'horizontalLine' });
+
+  if (!props.levels || props.levels.length === 0) return;
+
+  props.levels.forEach((level, index) => {
+    secondaryChart.value.createOverlay({
+      name: 'horizontalLine',
+      id: `level-${index}`,
+      points: [{ value: level.price }],
+      styles: {
+        line: {
+          color: level.color || '#888888',
+          style: 'dash',
+          show: true
+        },
+        text: {
+          show: true,
+          content: level.label,
+          color: '#ffffff',
+          backgroundColor: level.color || '#888888',
+          position: 'left',
+          size: 11
+        }
+      }
+    });
+  });
+};
+
+const removeLevels = () => {
+  if (!secondaryChart.value) return;
+  secondaryChart.value.removeOverlay({ name: 'horizontalLine' });
 };
 
 const loadMore = async (chart, id, type) => {
@@ -357,6 +385,7 @@ const initCharts = async () => {
 
     if (isAnnotationsVisible.value) applyAnnotations();
     if (isIndicatorsVisible.value) applyIndicators();
+    applyLevels();
   } catch (err) {
     console.error('Chart Init Error:', err);
   } finally {
@@ -408,6 +437,7 @@ watch(() => [props.primaryId, props.secondaryId, props.timeframe, props.maxTimes
   secondaryChart.value?.applyNewData(sResult.ticks);
   if (isIndicatorsVisible.value) applyIndicators();
   if (isAnnotationsVisible.value) applyAnnotations();
+  applyLevels();
   loading.value = false;
 });
 
@@ -420,6 +450,10 @@ watch(() => props.indicators, () => {
     removeIndicators();
     applyIndicators();
   }
+}, { deep: true });
+
+watch(() => props.levels, () => {
+  applyLevels();
 }, { deep: true });
 
 </script>

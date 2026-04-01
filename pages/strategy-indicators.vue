@@ -1,16 +1,16 @@
 <template>
   <div class="rules-page-container">
     <ClientOnly>
-      <StrategyRulesComp />
+      <StrategyIndicatorsComp />
     </ClientOnly>
   </div>
 </template>
 
 <script setup>
-import StrategyRulesComp from '~/components/StrategyRulesComp.vue';
+import StrategyIndicatorsComp from '~/components/StrategyIndicatorsComp.vue';
 
 useHead({
-  title: 'Strategy Rules - Trade Bot'
+  title: 'Strategy Indicators - Trade Bot'
 });
 </script>
 

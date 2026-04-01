@@ -12,13 +12,14 @@
           <!-- Backtest Analysis Controls -->
           <template v-if="isAnalysisRoute && backtestStore.backtests.length > 0">
             <div class="analysis-controls flex align-items-center">
-              <Select v-model="backtestStore.selectedBacktestId" :options="backtestStore.backtests" optionLabel="sessionId"
-                optionValue="sessionId" placeholder="Select Backtest" @change="onBacktestChange" class="backtest-select"
-                :loading="backtestStore.loading">
+              <Select v-model="backtestStore.selectedBacktestId" :options="backtestStore.backtests"
+                optionLabel="sessionId" optionValue="sessionId" placeholder="Select Backtest" @change="onBacktestChange"
+                class="backtest-select" :loading="backtestStore.loading">
                 <template #option="slotProps">
                   <div class="backtest-option" v-if="slotProps.option">
                     <span class="strategy-name font-bold">{{ slotProps.option.sessionId || 'Unknown Session' }}</span>
-                    <span class="text-xs text-secondary">{{ slotProps.option.config?.strategyId || 'Unknown Strategy' }}</span>
+                    <span class="text-xs text-secondary">{{ slotProps.option.config?.strategyId || 'Unknown Strategy'
+                      }}</span>
                     <div class="flex gap-2 mt-1">
                       <span class="backtest-dates text-xs" v-if="slotProps.option.startDate">
                         {{ slotProps.option.startDate }} - {{ slotProps.option.endDate }}
@@ -54,18 +55,22 @@
     </Dialog>
 
     <!-- Trade History Drawer -->
-    <Drawer v-model:visible="historyVisible" position="right" header="Execution Timeline" :style="{ width: '45vw' }"
-      class="history-drawer">
+    <Drawer v-model:visible="historyVisible" position="right" :style="{ width: '45vw' }" class="history-drawer">
+      <template #header>
+        <div class="flex items-center justify-between w-full pr-4">
+          <span class="text-4xl uppercase font-bold">Execution Timeline</span>
+          <span v-if="backtestStore.selectedBacktest?.summary"
+            :class="['text-2xl font-bold', backtestStore.selectedBacktest.summary.totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg']">
+            {{ formatCurrency(backtestStore.selectedBacktest.summary.totalPnl) }}
+          </span>
+        </div>
+      </template>
       <div v-if="backtestStore.selectedBacktest" class="history-content">
-        <!-- ML Model Info -->
-        <div v-if="backtestStore.selectedBacktest?.config?.mlModelPath" class="ml-model-info mb-4">
-          <Tag severity="info" class="w-full justify-content-start p-3">
-            <div class="flex align-items-center gap-2">
-              <i class="pi pi-microchip"></i>
-              <span><strong>ML Model:</strong> {{ extractFilename(backtestStore.selectedBacktest.config.mlModelPath)
-                }}</span>
-            </div>
-          </Tag>
+        <div v-if="backtestStore.selectedBacktest?.config?.mlModelPath" class="ml-model-info mb-4 py-2 px-1 border-bottom-1 border-transparent">
+          <div class="flex align-items-center gap-2 text-info font-bold">
+            <i class="pi pi-microchip"></i>
+            <span>ML Model: {{ extractFilename(backtestStore.selectedBacktest.config.mlModelPath) }}</span>
+          </div>
         </div>
 
         <!-- Date Selector (for multiday) -->
@@ -80,59 +85,58 @@
             class="instrument-section mb-5">
             <div class="instrument-header-row mb-3">
               <span class="symbol-name">{{ symbol }}</span>
-              <Tag :value="formatCurrency(instr.totalPnl)" :severity="instr.totalPnl >= 0 ? 'success' : 'danger'"
-                outlined />
+              <span :class="['font-bold', instr.totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg']">
+                {{ formatCurrency(instr.totalPnl) }}
+              </span>
             </div>
 
             <div class="cycles-timeline">
               <div v-for="cycle in instr.cycles" :key="cycle.id" class="cycle-timeline-card mb-4 p-3">
-                <div class="cycle-header flex justify-content-between align-items-center mb-3" style="padding: 10px;">
-                  <div class="flex align-items-center" style="gap:8px">
-                    <span class="cycle-id-text">{{ cycle.id }}</span>
-                    <Tag :value="cycle.duration" severity="secondary" icon="pi pi-clock" />
-                    <Tag :value="formatCurrency(cycle.totalPnl)"
-                      :severity="cycle.totalPnl >= 0 ? 'success' : 'danger'" />
+                <div class="cycle-header flex justify-between items-center mb-1 p-2">
+                  <div class="flex items-center gap-3">
+                    <span class="cycle-id-text font-bold text-lg leading-none">{{ cycle.id.replace('cycle-', '') }}.</span>
+                    <span class="cycle-duration text-secondary text-base leading-none">{{ cycle.duration }}</span>
+                    <span :class="['font-bold', cycle.totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg']">
+                      {{ formatCurrency(cycle.totalPnl) }}
+                    </span>
                   </div>
                 </div>
 
                 <Timeline :value="cycle.executions" class="customized-timeline">
-                    <template #opposite="slotProps">
-                      <div class="flex flex-column align-items-start">
-                        <small class="text-secondary font-bold">{{ formatTimeOnly(slotProps.item.time) }}</small>
-                        <small class="text-xs text-secondary opacity-70" v-if="slotProps.item.niftyPrice">
-                          NIFTY: {{ slotProps.item.niftyPrice }}
-                        </small>
-                      </div>
-                    </template>
-                    <template #content="slotProps">
-                      <div class="execution-content p-2 border-round surface-hover">
-                        <div class="exec-header flex align-items-center justify-content-between mb-1">
-                          <div class="flex align-items-center gap-2">
-                            <i :class="getExecutionIcon(slotProps.item.type)" :style="{ color: getExecutionColor(slotProps.item.type) }"></i>
-                            <Tag :value="slotProps.item.type" :severity="getExecutionSeverity(slotProps.item.type)" class="exec-tag" />
-                            <span class="exec-price font-bold">@ {{ slotProps.item.price }}</span>
-                          </div>
-                          <div class="exec-pnl" v-if="slotProps.item.pnl !== undefined">
-                            <Tag :value="formatCurrency(slotProps.item.pnl)" :severity="slotProps.item.pnl >= 0 ? 'success' : 'danger'" outlined />
-                          </div>
-                        </div>
-                        <div class="exec-details flex align-items-center gap-3 text-xs text-secondary">
-                          <span v-if="slotProps.item.quantity" class="flex align-items-center gap-1">
-                            <i class="pi pi-shopping-cart text-xs"></i> {{ slotProps.item.quantity }} units
+                  <template #opposite="slotProps">
+                    <div class="flex align-items-center h-full">
+                      <span class="text-secondary font-bold text-base leading-none">{{
+                        formatTimeOnly(slotProps.item.time) }}</span>
+                    </div>
+                  </template>
+                  <template #content="slotProps">
+                    <div class="execution-content pb-2 surface-hover border-round">
+                      <div class="exec-header flex align-items-center justify-content-between h-full">
+                        <div class="flex align-items-center gap-3">
+                          <i :class="getExecutionIcon(slotProps.item.type)"
+                            :style="{ color: getExecutionColor(slotProps.item.type) }"></i>
+                          <span class="exec-main-text font-bold text-base leading-none">
+                            {{ slotProps.item.type }} - {{ slotProps.item.quantity }} lots @ {{ slotProps.item.price }}
+                            <span class="text-secondary ml-3 font-normal">₹{{ (slotProps.item.quantity *
+                              slotProps.item.price * (backtestStore.selectedBacktest?.summary?.niftyLotSize ||
+                                65)).toLocaleString('en-IN', { minimumFractionDigits: 2 }) }}</span>
                           </span>
-                          <span v-if="slotProps.item.reasonDesc || slotProps.item.reason" class="flex align-items-center gap-1">
-                            <i class="pi pi-info-circle text-xs"></i> {{ slotProps.item.reasonDesc || slotProps.item.reason }}
+                        </div>
+                        <div class="exec-pnl" v-if="slotProps.item.actionPnl !== undefined">
+                          <span :class="['font-bold', slotProps.item.actionPnl >= 0 ? 'pnl-pos' : 'pnl-neg']">
+                            {{ formatCurrency(slotProps.item.actionPnl) }}
                           </span>
                         </div>
                       </div>
-                    </template>
+                    </div>
+                  </template>
                 </Timeline>
               </div>
             </div>
           </div>
         </div>
-        <div v-else class="flex flex-direction-column align-items-center justify-content-center p-8 text-secondary">
-          <i class="pi pi-calendar-times mb-3" style="font-size: 3rem"></i>
+        <div v-else class="flex flex-col items-center justify-center p-8 text-secondary">
+          <i class="pi pi-calendar-times mb-3 text-4xl"></i>
           <p>No trades recorded for this date</p>
         </div>
       </div>
@@ -155,9 +159,9 @@
               <i class="pi pi-chart-bar"></i>
               <span v-if="sidebarVisible">Trade Review</span>
             </NuxtLink>
-            <NuxtLink to="/strategy-rules" class="menu-item" title="Strategy Rules">
+            <NuxtLink to="/strategy-indicators" class="menu-item" title="Strategy Indicators">
               <i class="pi pi-book"></i>
-              <span v-if="sidebarVisible">Strategy Rules</span>
+              <span v-if="sidebarVisible">Strategy Indicators</span>
             </NuxtLink>
             <NuxtLink to="/chart-playground" class="menu-item" title="Chart Playground">
               <i class="pi pi-play"></i>
@@ -169,8 +173,8 @@
           <div v-if="isAnalysisRoute && backtestStore.selectedBacktest" class="trades-sidebar-section">
             <div class="sidebar-header" v-if="sidebarVisible">INSTRUMENTS</div>
             <div class="trades-list" v-if="sidebarVisible">
-              <Tree :value="treeNodes" selectionMode="single" @node-select="onNodeSelect"
-                :selectionKeys="selectionKeys" v-model:expandedKeys="expandedKeys" class="w-full trades-tree">
+              <Tree :value="treeNodes" selectionMode="single" @node-select="onNodeSelect" :selectionKeys="selectionKeys"
+                v-model:expandedKeys="expandedKeys" class="w-full trades-tree">
                 <template #default="slotProps">
                   <div class="tree-node-content"
                     :class="{ 'instrument-node': slotProps.node.data.type === 'instrument' }">
@@ -203,7 +207,6 @@ import Select from 'primevue/select';
 import Dialog from 'primevue/dialog';
 import Drawer from 'primevue/drawer';
 import Timeline from 'primevue/timeline';
-import Tag from 'primevue/tag';
 import Tree from 'primevue/tree';
 import ThemeSwitcherComp from '~/components/ThemeSwitcherComp.vue';
 import { parseSafeTimestamp } from '@/utils/trade-utils';
@@ -248,7 +251,7 @@ const isAnalysisRoute = computed(() =>
 
 const treeNodes = computed(() => {
   const trades = backtestStore.selectedBacktest?.tradeCycles || [];
-  
+
   const nodes = [];
 
   // 0. Global Overview Node
@@ -298,7 +301,7 @@ const treeNodes = computed(() => {
     const exitTimeStr = formatTimeLocalized(t.exit);
     const exitReason = t.exit?.signal || 'OPEN';
     const label = `${exitTimeStr} [${exitReason}]`;
-    const pnl = t.cyclePnL || 0;
+    const pnl = t.cyclePnl || 0;
 
     instrumentGroups[symbol].children[cycleId].children.push({
       key: `trade-${index}`,
@@ -333,7 +336,7 @@ const availableDates = computed(() => {
 
 const groupedTradesByDate = computed(() => {
   const trades = backtestStore.selectedBacktest?.tradeCycles || [];
-  
+
   const instrMap = {};
   trades.forEach(t => {
     if (t.symbol) {
@@ -370,7 +373,7 @@ const groupedTradesByDate = computed(() => {
     }
 
     const cycle = groups[date][symbol].cycles[cycleId];
-    const pnl = t.cyclePnL || 0;
+    const pnl = t.cyclePnl || 0;
     cycle.totalPnl += pnl;
     groups[date][symbol].totalPnl += pnl;
 
@@ -417,7 +420,7 @@ const groupedTradesByDate = computed(() => {
           time: parseSafeTimestamp(tgt.time),
           price: tgt.price,
           quantity: tgt.quantity,
-          pnl: tgt.pnl,
+          actionPnl: tgt.actionPnl,
           reason: `Target ${tgt.step} Hit`,
           reasonDesc: tgt.transaction,
           niftyPrice: tgt.niftyPrice
@@ -432,7 +435,7 @@ const groupedTradesByDate = computed(() => {
         time: exitEp,
         price: t.exit?.price || 0,
         quantity: t.exit?.quantity || 0,
-        pnl: t.exit?.pnl || 0,
+        actionPnl: t.exit?.actionPnl || 0,
         reason: t.exit?.signal,
         reasonDesc: t.exit?.signalDescription,
         niftyPrice: t.exit?.niftyPrice
@@ -472,7 +475,12 @@ const calculateDuration = (sEp, eEp) => {
 const formatTimeOnly = (ep) => {
   if (!ep) return '';
   const date = new Date(ep * 1000);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  return date.toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata'
+  }).toLowerCase();
 };
 
 const extractFilename = (path) => {
@@ -499,11 +507,11 @@ const getExecutionIcon = (type) => {
 };
 
 const getExecutionColor = (type) => {
-  if (type === 'ENTRY') return 'var(--p-blue-400)';
+  if (type === 'ENTRY') return 'var(--color-entry)';
   if (type === 'EOD') return 'var(--text-muted)';
-  if (type.startsWith('TARGET')) return 'var(--color-profit)';
+  if (type.startsWith('TARGET')) return 'var(--color-target)';
   if (type.includes('SL')) return 'var(--color-loss)';
-  return 'var(--p-orange-400)';
+  return 'var(--color-exit)';
 };
 
 const formatCurrency = (val) => {
@@ -583,31 +591,6 @@ onMounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   backdrop-filter: blur(8px);
   width: 200px;
-}
-
-.flex {
-  display: flex;
-}
-
-.align-items-center {
-  align-items: center;
-}
-
-.ml-1 {
-  margin-left: 0.25rem;
-}
-
-.ml-2 {
-  margin-left: 0.5rem;
-}
-
-.mr-2 {
-  margin-right: 0.5rem;
-}
-
-.mx-3 {
-  margin-left: 1rem;
-  margin-right: 1rem;
 }
 
 .divider {
@@ -812,6 +795,10 @@ pre {
 
 .pnl-neg {
   color: var(--color-loss);
+}
+
+.text-info {
+  color: var(--color-entry);
 }
 
 .cycle-timeline-card {

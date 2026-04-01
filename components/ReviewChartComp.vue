@@ -27,7 +27,7 @@
         </div>
 
         <div v-if="loading" class="chart-overlay">
-            <i class="pi pi-spin pi-spinner" style="font-size: 2rem"></i>
+            <i class="pi pi-spin pi-spinner text-4xl"></i>
             <span>Loading Chart Data...</span>
         </div>
     </div>
@@ -38,6 +38,7 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { init, dispose } from 'klinecharts';
 import Button from 'primevue/button';
 import SelectButton from 'primevue/selectbutton';
+import { getChartMarkerBg, getChartMarkerFg } from '../utils/color-utils';
 
 const props = defineProps({
     instrumentId: [Number, String],
@@ -147,15 +148,7 @@ const fetchChartData = async (id, timeframe, endTime = null) => {
 
 
 
-const getMarkerColor = (type) => {
-    const root = getComputedStyle(document.documentElement);
-    switch (type) {
-        case 'ENTRY': return root.getPropertyValue('--color-entry');
-        case 'EXIT': return root.getPropertyValue('--color-exit');
-        case 'TARGET': return root.getPropertyValue('--color-target');
-        default: return root.getPropertyValue('--p-purple-500');
-    }
-};
+// getChartMarkerBg is now imported from utils/color-utils.js
 
 const applyIndicators = () => {
     if (!chartInstance.value || !props.indicators) return;
@@ -195,7 +188,8 @@ const applyAnnotations = () => {
     chartInstance.value.removeOverlay({ name: 'simpleAnnotation' });
     const validMarkers = props.markers.filter(m => m.time > 0);
     validMarkers.forEach((m) => {
-        const markerColor = getMarkerColor(m.type);
+        const markerBg = getChartMarkerBg(m.type);
+        const markerFg = getChartMarkerFg(markerBg);
 
         // Label logic: ENTRY shows price, EXIT/TARGET shows PnL (or Price if mode is Price)
         let label = '';
@@ -224,9 +218,9 @@ const applyAnnotations = () => {
             extendData: label,
             points: [{ timestamp: (m.time * 1000), value: plotPrice }],
             styles: {
-                text: { color: getComputedStyle(document.documentElement).getPropertyValue('--p-surface-0').trim() || '#ffffff', backgroundColor: markerColor, size: 11 },
-                polygon: { color: markerColor, fill: true },
-                line: { color: markerColor, style: 'solid' }
+                text: { color: markerFg, backgroundColor: markerBg, size: 11 },
+                polygon: { color: markerBg, fill: true },
+                line: { color: markerBg, style: 'solid' }
             }
         });
     });

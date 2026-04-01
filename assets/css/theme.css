@@ -16,12 +16,12 @@
     --layout-padding-sm: 0.5rem;
 
     /* Semantic Trading Colors mapped to PrimeVue variables */
-    --color-profit: var(--p-green-500);
-    --color-loss: var(--p-red-500);
+    --color-profit: var(--p-green-400);
+    --color-loss: var(--p-red-400);
 
-    --color-entry: var(--p-blue-600);
-    --color-exit: var(--p-red-800);
-    --color-target: var(--p-orange-600);
+    --color-entry: var(--p-blue-300);
+    --color-target: var(--p-orange-300);
+    --color-exit: var(--p-red-400);
 
     /* Light Mode Tokens (Zerodha inspired Light) */
     --layout-bg: #f5f5f5;
