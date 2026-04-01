@@ -129,7 +129,7 @@ export function generateMarkersFromTrade(currentTrade) {
                 'SIGNAL_EXIT': 'SIG',
                 'SIGNAL_FLIP': 'SIG'
             };
-            const shortReason = reasonMap[trade.exit.signal] || trade.exit.signal;
+            const shortReason = reasonMap[trade.exit.reason] || trade.exit.reason;
 
             list.push({
                 id: `exit-${cycleId}-${exitTime}`,
@@ -137,8 +137,8 @@ export function generateMarkersFromTrade(currentTrade) {
                 niftyPrice: niftyPrice,
                 optionPrice: optionPrice,
                 pnl: trade.cyclePnL || 0,
-                label: trade.exit.signal?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
-                type: trade.exit.signal?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
+                label: trade.exit.reason?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
+                type: trade.exit.reason?.startsWith('TARGET') ? 'TARGET' : 'EXIT',
                 exitReason: shortReason,
                 cycleId: cycleId
             });
